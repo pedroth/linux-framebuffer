@@ -75,32 +75,34 @@ void Screen_close(Screen *screen) {
   free(screen);
 }
 
-Screen *map(Screen *screen,
-            uint8_t *(*lambda)(Screen *s, uint32_t x, uint32_t y, void *c),
-            void *context) {
+typedef void lambda_t(uint8_t *color, Screen *s, uint32_t x, uint32_t y, void *c);
+
+Screen *map(Screen *screen, lambda_t *lambda, void *context) {
   uint32_t screen_size = screen->size;
   uint32_t w = screen->width;
   uint32_t h = screen->height;
   uint8_t channels = screen->channels;
+  uint8_t *pos = &screen->canvas[0];
 
-  for (uint32_t k = 0; k < screen_size; k += channels) {
-    uint32_t i = k / (channels * w);
-    uint32_t j = (k / channels) % w;
+  for (
+		  uint32_t kc = 0;
+		  kc < screen_size / channels;
+		  kc ++, pos += channels)
+  {
+    uint32_t i = kc / w;
+    uint32_t j = kc % w;
     uint32_t x = j;
     uint32_t y = h - 1 - i;
-    uint8_t *color = lambda(screen, x, y, context);
-    if (color == NULL) {
-      continue;
-    }
-    screen->canvas[k] = color[2];     // Blue
-    screen->canvas[k + 1] = color[1]; // Green
-    screen->canvas[k + 2] = color[0]; // Red
+    uint8_t color[channels];
+    lambda(color, screen, x, y, context);
+    pos[0] = color[2];
+    pos[1] = color[1];
+    pos[2] = color[0];
     if (channels == 4) {
-      screen->canvas[k + 3] = MAX_BYTE; // Alpha (if present)
+      pos[3] = MAX_BYTE; // Alpha (if present)
     }
-    free(color);
   }
-  Screen_paint(screen);
+  Screen_paint(screen); // -Wimplicit-function-declaration
   return screen;
 }
 
@@ -111,8 +113,8 @@ void Screen_paint(Screen *screen) {
   write(screen->frame_buffer_fd, screen->canvas, screen->size);
 }
 
-uint8_t *anime(Screen *screen, uint32_t x, uint32_t y, void *context) {
-  uint8_t *ans = malloc(sizeof(uint8_t) * 3);
+lambda_t anime; // just forces the correct type below
+void anime(uint8_t *ans, Screen *screen, uint32_t x, uint32_t y, void *context) {
   double time = ((Time *)context)->time;
 
   double px = (double)x * time / screen->width;
@@ -121,8 +123,6 @@ uint8_t *anime(Screen *screen, uint32_t x, uint32_t y, void *context) {
   ans[0] = ((uint8_t)(MAX_BYTE * px)) % MAX_BYTE;
   ans[1] = ((uint8_t)(MAX_BYTE * py)) % MAX_BYTE;
   ans[2] = (uint8_t)0;
-
-  return ans;
 }
 
 double get_time() {
